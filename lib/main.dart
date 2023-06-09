@@ -123,13 +123,16 @@ class _MyAppState extends State<MyApp> {
         },
       ),
     );
+agoraEngine.enableAudio();
+    agoraEngine.enableLocalAudio(true);
+    agoraEngine.setEnableSpeakerphone(true);
   }
 
   void join() async {
     // Set channel options including the client role and channel profile
     ChannelMediaOptions options = const ChannelMediaOptions(
       clientRoleType: ClientRoleType.clientRoleBroadcaster,
-      channelProfile: ChannelProfileType.channelProfileCommunication,
+      channelProfile: ChannelProfileType.channelProfileCloudGaming,
     );
 
     await agoraEngine.joinChannel(
