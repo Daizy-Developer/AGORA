@@ -1,132 +1,324 @@
-import 'dart:async';
+import 'dart:developer';
 
 import 'package:agora_rtc_engine/agora_rtc_engine.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-const appId = "d776258684954df1a6813c77c705968f";
-const token = "007eJxTYJh/p1ancvlBW2Ndj8/vNH9dd/M+vlL7eefyqbVHuzbf++inwJBibm5mZGphZmFiaWqSkmaYaGZhaJxsbp5sbmBqaWaRdruqOaUhkJHhU/tEBkYoBPH5GdwTc1OLit1LE4tSMhPzihkYAJo5Jmo=";
-const channel = "GamersGuardians";
+void main() => runApp(const MaterialApp(home: JoinChannelAudio()));
 
-void main() => runApp(const MaterialApp(home: MyApp()));
-
-class MyApp extends StatefulWidget {
-  const MyApp({Key? key}) : super(key: key);
+/// JoinChannelAudio Example
+class JoinChannelAudio extends StatefulWidget {
+  /// Construct the [JoinChannelAudio]
+  const JoinChannelAudio({Key? key}) : super(key: key);
 
   @override
-  State<MyApp> createState() => _MyAppState();
+  State<StatefulWidget> createState() => _State();
 }
 
-class _MyAppState extends State<MyApp> {
-  int? _remoteUid;
-  bool _localUserJoined = false;
-  late RtcEngine _engine;
+class _State extends State<JoinChannelAudio> {
+  late final RtcEngine _engine;
+  String channelId = "GamersGuardians";
+  bool isJoined = false,
+      openMicrophone = true,
+      enableSpeakerphone = true,
+      playEffect = false;
+  bool _enableInEarMonitoring = false;
+  double _recordingVolume = 100,
+      _playbackVolume = 100,
+      _inEarMonitoringVolume = 100;
+  late TextEditingController _controller;
+  ChannelProfileType _channelProfileType =
+      ChannelProfileType.channelProfileLiveBroadcasting;
 
   @override
   void initState() {
     super.initState();
-    initAgora();
+    _controller = TextEditingController(text: channelId);
+    _initEngine();
   }
 
-  Future<void> initAgora() async {
-    // retrieve permissions
-    await [Permission.microphone, Permission.camera].request();
+  @override
+  void dispose() {
+    super.dispose();
+    _dispose();
+  }
 
-    //create the engine
+  Future<void> _dispose() async {
+    await _engine.leaveChannel();
+    await _engine.release();
+  }
+
+  Future<void> _initEngine() async {
     _engine = createAgoraRtcEngine();
     await _engine.initialize(const RtcEngineContext(
-      appId: appId,
-      channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+      appId: "d776258684954df1a6813c77c705968f",
     ));
 
-    _engine.registerEventHandler(
-      RtcEngineEventHandler(
-        onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-          debugPrint("local user ${connection.localUid} joined");
-          setState(() {
-            _localUserJoined = true;
-          });
-        },
-        onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
-          debugPrint("remote user $remoteUid joined");
-          setState(() {
-            _remoteUid = remoteUid;
-          });
-        },
-        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
-          debugPrint("remote user $remoteUid left channel");
-          setState(() {
-            _remoteUid = null;
-          });
-        },
-        onTokenPrivilegeWillExpire: (RtcConnection connection, String token) {
-          debugPrint('[onTokenPrivilegeWillExpire] connection: ${connection.toJson()}, token: $token');
-        },
-      ),
-    );
+    _engine.registerEventHandler(RtcEngineEventHandler(
+      onError: (ErrorCodeType err, String msg) {
+        log('[onError] err: $err, msg: $msg');
+      },
+      onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
+        log(
+            '[onJoinChannelSuccess] connection: ${connection.toJson()} elapsed: $elapsed');
+        setState(() {
+          isJoined = true;
+        });
+      },
+      onLeaveChannel: (RtcConnection connection, RtcStats stats) {
+        log(
+            '[onLeaveChannel] connection: ${connection.toJson()} stats: ${stats.toJson()}');
+        setState(() {
+          isJoined = false;
+        });
+      },
+    ));
 
-    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
-    await _engine.enableVideo();
     await _engine.enableAudio();
-    await _engine.startPreview();
-
-    await _engine.joinChannel(
-      token: token,
-      channelId: channel,
-      uid: 0,
-      options: const ChannelMediaOptions(),
+    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    await _engine.setAudioProfile(
+      profile: AudioProfileType.audioProfileDefault,
+      scenario: AudioScenarioType.audioScenarioGameStreaming,
     );
   }
 
-  // Create UI with local view and remote view
+  _joinChannel() async {
+    if (defaultTargetPlatform == TargetPlatform.android) {
+      await Permission.microphone.request();
+    }
+
+    await _engine.joinChannel(
+        token: "007eJxTYJh/p1ancvlBW2Ndj8/vNH9dd/M+vlL7eefyqbVHuzbf++inwJBibm5mZGphZmFiaWqSkmaYaGZhaJxsbp5sbmBqaWaRdruqOaUhkJHhU/tEBkYoBPH5GdwTc1OLit1LE4tSMhPzihkYAJo5Jmo=",
+        channelId: _controller.text,
+        uid: 0,
+        options: ChannelMediaOptions(
+          channelProfile: _channelProfileType,
+          clientRoleType: ClientRoleType.clientRoleBroadcaster,
+        ));
+  }
+
+  _leaveChannel() async {
+    await _engine.leaveChannel();
+    setState(() {
+      isJoined = false;
+      openMicrophone = true;
+      enableSpeakerphone = true;
+      playEffect = false;
+      _enableInEarMonitoring = false;
+      _recordingVolume = 100;
+      _playbackVolume = 100;
+      _inEarMonitoringVolume = 100;
+    });
+  }
+
+  _switchMicrophone() async {
+    // await await _engine.muteLocalAudioStream(!openMicrophone);
+    await _engine.enableLocalAudio(!openMicrophone);
+    setState(() {
+      openMicrophone = !openMicrophone;
+    });
+  }
+
+  _switchSpeakerphone() async {
+    await _engine.setEnableSpeakerphone(!enableSpeakerphone);
+    setState(() {
+      enableSpeakerphone = !enableSpeakerphone;
+    });
+  }
+
+  _switchEffect() async {
+    if (playEffect) {
+      await _engine.stopEffect(1);
+      setState(() {
+        playEffect = false;
+      });
+    } else {
+      final path =
+      (await _engine.getAssetAbsolutePath("assets/Sound_Horizon.mp3"))!;
+      await _engine.playEffect(
+          soundId: 1,
+          filePath: path,
+          loopCount: 0,
+          pitch: 1,
+          pan: 1,
+          gain: 100,
+          publish: true);
+      // .then((value) {
+      setState(() {
+        playEffect = true;
+      });
+    }
+  }
+
+  _onChangeInEarMonitoringVolume(double value) async {
+    _inEarMonitoringVolume = value;
+    await _engine.setInEarMonitoringVolume(_inEarMonitoringVolume.toInt());
+    setState(() {});
+  }
+
+  _toggleInEarMonitoring(value) async {
+    try {
+      await _engine.enableInEarMonitoring(
+          enabled: value,
+          includeAudioFilters: EarMonitoringFilterType.earMonitoringFilterNone);
+      _enableInEarMonitoring = value;
+      setState(() {});
+    } catch (e) {
+      // Do nothing
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Agora Video Call'),
+    final channelProfileType = [
+      ChannelProfileType.channelProfileLiveBroadcasting,
+      ChannelProfileType.channelProfileCommunication,
+    ];
+    final items = channelProfileType
+        .map((e) => DropdownMenuItem(
+      child: Text(
+        e.toString().split('.')[1],
       ),
+      value: e,
+    ))
+        .toList();
+
+    return Scaffold(
       body: Stack(
         children: [
-          Center(
-            child: _remoteVideo(),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.start,
+            children: [
+              TextField(
+                controller: _controller,
+                decoration: const InputDecoration(hintText: 'Channel ID'),
+              ),
+              const Text('Channel Profile: '),
+              DropdownButton<ChannelProfileType>(
+                  items: items,
+                  value: _channelProfileType,
+                  onChanged: isJoined
+                      ? null
+                      : (v) async {
+                    setState(() {
+                      _channelProfileType = v!;
+                    });
+                  }),
+              Row(
+                children: [
+                  Expanded(
+                    flex: 1,
+                    child: ElevatedButton(
+                      onPressed: isJoined ? _leaveChannel : _joinChannel,
+                      child: Text('${isJoined ? 'Leave' : 'Join'} channel'),
+                    ),
+                  )
+                ],
+              ),
+            ],
           ),
           Align(
-            alignment: Alignment.topLeft,
-            child: SizedBox(
-              width: 100,
-              height: 150,
-              child: Center(
-                child: _localUserJoined
-                    ? AgoraVideoView(
-                  controller: VideoViewController(
-                    rtcEngine: _engine,
-                    canvas: const VideoCanvas(uid: 0),
-                  ),
-                )
-                    : const CircularProgressIndicator(),
-              ),
-            ),
-          ),
+              alignment: Alignment.bottomRight,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 0),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.end,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _switchMicrophone,
+                      child: Text('Microphone ${openMicrophone ? 'on' : 'off'}'),
+                    ),
+                    ElevatedButton(
+                      onPressed: isJoined ? _switchSpeakerphone : null,
+                      child:
+                      Text(enableSpeakerphone ? 'Speakerphone' : 'Earpiece'),
+                    ),
+                    if (!kIsWeb)
+                      ElevatedButton(
+                        onPressed: isJoined ? _switchEffect : null,
+                        child: Text('${playEffect ? 'Stop' : 'Play'} effect'),
+                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        const Text('RecordingVolume:'),
+                        Slider(
+                          value: _recordingVolume,
+                          min: 0,
+                          max: 400,
+                          divisions: 5,
+                          label: 'RecordingVolume',
+                          onChanged: isJoined
+                              ? (double value) async {
+                            setState(() {
+                              _recordingVolume = value;
+                            });
+                            await _engine
+                                .adjustRecordingSignalVolume(value.toInt());
+                          }
+                              : null,
+                        )
+                      ],
+                    ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        const Text('PlaybackVolume:'),
+                        Slider(
+                          value: _playbackVolume,
+                          min: 0,
+                          max: 400,
+                          divisions: 5,
+                          label: 'PlaybackVolume',
+                          onChanged: isJoined
+                              ? (double value) async {
+                            setState(() {
+                              _playbackVolume = value;
+                            });
+                            await _engine
+                                .adjustPlaybackSignalVolume(value.toInt());
+                          }
+                              : null,
+                        )
+                      ],
+                    ),
+                    Column(
+                      mainAxisSize: MainAxisSize.min,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Row(mainAxisSize: MainAxisSize.min, children: [
+                          const Text('InEar Monitoring Volume:'),
+                          Switch(
+                            value: _enableInEarMonitoring,
+                            onChanged: isJoined ? _toggleInEarMonitoring : null,
+                            activeTrackColor: Colors.grey[350],
+                            activeColor: Colors.white,
+                          )
+                        ]),
+                        if (_enableInEarMonitoring)
+                          SizedBox(
+                              width: 300,
+                              child: Slider(
+                                value: _inEarMonitoringVolume,
+                                min: 0,
+                                max: 100,
+                                divisions: 5,
+                                label:
+                                'InEar Monitoring Volume $_inEarMonitoringVolume',
+                                onChanged: isJoined
+                                    ? _onChangeInEarMonitoringVolume
+                                    : null,
+                              ))
+                      ],
+                    ),
+                  ],
+                ),
+              ))
         ],
       ),
     );
-  }
-
-  // Display remote user's video
-  Widget _remoteVideo() {
-    if (_remoteUid != null) {
-      return AgoraVideoView(
-        controller: VideoViewController.remote(
-          rtcEngine: _engine,
-          canvas: VideoCanvas(uid: _remoteUid),
-          connection: const RtcConnection(channelId: channel),
-        ),
-      );
-    } else {
-      return const Text(
-        'Please wait for remote user to join',
-        textAlign: TextAlign.center,
-      );
-    }
   }
 }
