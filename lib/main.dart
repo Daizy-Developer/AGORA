@@ -1,13 +1,12 @@
 import 'dart:async';
+
+import 'package:agora_rtc_engine/agora_rtc_engine.dart';
 import 'package:flutter/material.dart';
 import 'package:permission_handler/permission_handler.dart';
 
-import 'package:agora_rtc_engine/agora_rtc_engine.dart';
-import 'dart:math' as math;
-
-
-
-const String appId = "d776258684954df1a6813c77c705968f";
+const appId = "d776258684954df1a6813c77c705968f";
+const token = "007eJxTYJh/p1ancvlBW2Ndj8/vNH9dd/M+vlL7eefyqbVHuzbf++inwJBibm5mZGphZmFiaWqSkmaYaGZhaJxsbp5sbmBqaWaRdruqOaUhkJHhU/tEBkYoBPH5GdwTc1OLit1LE4tSMhPzihkYAJo5Jmo=";
+const channel = "GamersGuardians";
 
 void main() => runApp(const MaterialApp(home: MyApp()));
 
@@ -15,151 +14,119 @@ class MyApp extends StatefulWidget {
   const MyApp({Key? key}) : super(key: key);
 
   @override
-  _MyAppState createState() => _MyAppState();
+  State<MyApp> createState() => _MyAppState();
 }
 
 class _MyAppState extends State<MyApp> {
-  String channelName = "GamersGuardians";
-  String token = "007eJxTYJh/p1ancvlBW2Ndj8/vNH9dd/M+vlL7eefyqbVHuzbf++inwJBibm5mZGphZmFiaWqSkmaYaGZhaJxsbp5sbmBqaWaRdruqOaUhkJHhU/tEBkYoBPH5GdwTc1OLit1LE4tSMhPzihkYAJo5Jmo=";
-
-  int uid = 1; // uid of the local user
-
-  int? _remoteUid = 0; // uid of the remote user
-  bool _isJoined = false; // Indicates if the local user has joined the channel
-  late RtcEngine agoraEngine; // Agora engine instance
-
-  final GlobalKey<ScaffoldMessengerState> scaffoldMessengerKey =
-      GlobalKey<ScaffoldMessengerState>(); // Global key to access the scaffold
-  // Build UI
-  @override
-  Widget build(BuildContext context) {
-    return MaterialApp(
-      scaffoldMessengerKey: scaffoldMessengerKey,
-      home: Scaffold(
-          appBar: AppBar(
-            title: const Text('Get started with Voice Calling'),
-          ),
-          body: ListView(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-            children: [
-              // Status text
-              Container(height: 40, child: Center(child: _status())),
-              // Button Row
-              Row(
-                children: <Widget>[
-                  Expanded(
-                    child: ElevatedButton(
-                      child: const Text("Join"),
-                      onPressed: () => {join()},
-                    ),
-                  ),
-                  const SizedBox(width: 10),
-                  Expanded(
-                    child: ElevatedButton(
-                      child: const Text("Leave"),
-                      onPressed: () => {leave()},
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          )),
-    );
-  }
-
-  Widget _status() {
-    String statusText;
-
-    if (!_isJoined) {
-      statusText = 'Join a channel';
-    } else if (_remoteUid == null) {
-      statusText = 'Waiting for a remote user to join...';
-    } else {
-      statusText = 'Connected to remote user, uid:$_remoteUid';
-    }
-
-    return Text(
-      statusText,
-    );
-  }
+  int? _remoteUid;
+  bool _localUserJoined = false;
+  late RtcEngine _engine;
 
   @override
   void initState() {
     super.initState();
-    // Set up an instance of Agora engine
-    setupVoiceSDKEngine();
+    initAgora();
   }
 
-  Future<void> setupVoiceSDKEngine() async {
-    // retrieve or request microphone permission
-    await [Permission.microphone].request();
+  Future<void> initAgora() async {
+    // retrieve permissions
+    await [Permission.microphone, Permission.camera].request();
 
-    //create an instance of the Agora engine
-    agoraEngine = createAgoraRtcEngine();
-    await agoraEngine.initialize(const RtcEngineContext(appId: appId));
+    //create the engine
+    _engine = createAgoraRtcEngine();
+    await _engine.initialize(const RtcEngineContext(
+      appId: appId,
+      channelProfile: ChannelProfileType.channelProfileLiveBroadcasting,
+    ));
 
-    // Register the event handler
-    agoraEngine.registerEventHandler(
+    _engine.registerEventHandler(
       RtcEngineEventHandler(
         onJoinChannelSuccess: (RtcConnection connection, int elapsed) {
-          showMessage(
-              "Local user uid:${connection.localUid} joined the channel");
+          debugPrint("local user ${connection.localUid} joined");
           setState(() {
-            _isJoined = true;
+            _localUserJoined = true;
           });
         },
         onUserJoined: (RtcConnection connection, int remoteUid, int elapsed) {
-          showMessage("Remote user uid:$remoteUid joined the channel");
+          debugPrint("remote user $remoteUid joined");
           setState(() {
             _remoteUid = remoteUid;
           });
         },
-        onUserOffline: (RtcConnection connection, int remoteUid,
-            UserOfflineReasonType reason) {
-          showMessage("Remote user uid:$remoteUid left the channel");
+        onUserOffline: (RtcConnection connection, int remoteUid, UserOfflineReasonType reason) {
+          debugPrint("remote user $remoteUid left channel");
           setState(() {
             _remoteUid = null;
           });
         },
+        onTokenPrivilegeWillExpire: (RtcConnection connection, String token) {
+          debugPrint('[onTokenPrivilegeWillExpire] connection: ${connection.toJson()}, token: $token');
+        },
       ),
     );
-agoraEngine.enableAudio();
-    agoraEngine.enableLocalAudio(true);
-    agoraEngine.setEnableSpeakerphone(true);
-  }
 
-  void join() async {
-    // Set channel options including the client role and channel profile
-    ChannelMediaOptions options = const ChannelMediaOptions(
-      clientRoleType: ClientRoleType.clientRoleBroadcaster,
-      channelProfile: ChannelProfileType.channelProfileCloudGaming,
-    );
+    await _engine.setClientRole(role: ClientRoleType.clientRoleBroadcaster);
+    await _engine.enableVideo();
+    await _engine.enableAudio();
+    await _engine.startPreview();
 
-    await agoraEngine.joinChannel(
+    await _engine.joinChannel(
       token: token,
-      channelId: channelName,
-      options: options,
-      uid: uid,
+      channelId: channel,
+      uid: 0,
+      options: const ChannelMediaOptions(),
     );
   }
 
-  void leave() {
-    setState(() {
-      _isJoined = false;
-      _remoteUid = null;
-    });
-    agoraEngine.leaveChannel();
-  }
-
+  // Create UI with local view and remote view
   @override
-  void dispose() async {
-    await agoraEngine.leaveChannel();
-    super.dispose();
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Agora Video Call'),
+      ),
+      body: Stack(
+        children: [
+          Center(
+            child: _remoteVideo(),
+          ),
+          Align(
+            alignment: Alignment.topLeft,
+            child: SizedBox(
+              width: 100,
+              height: 150,
+              child: Center(
+                child: _localUserJoined
+                    ? AgoraVideoView(
+                  controller: VideoViewController(
+                    rtcEngine: _engine,
+                    canvas: const VideoCanvas(uid: 0),
+                  ),
+                )
+                    : const CircularProgressIndicator(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
-  showMessage(String message) {
-    scaffoldMessengerKey.currentState?.showSnackBar(SnackBar(
-      content: Text(message),
-    ));
+  // Display remote user's video
+  Widget _remoteVideo() {
+    if (_remoteUid != null) {
+      return AgoraVideoView(
+        controller: VideoViewController.remote(
+          rtcEngine: _engine,
+          canvas: VideoCanvas(uid: _remoteUid),
+          connection: const RtcConnection(channelId: channel),
+        ),
+      );
+    } else {
+      return const Text(
+        'Please wait for remote user to join',
+        textAlign: TextAlign.center,
+      );
+    }
   }
 }
